@@ -161,4 +161,3 @@
 (define-public (transfer-tokens (recipient principal) (amount uint))
   (ft-transfer? governance-token amount tx-sender recipient)
 )
-//

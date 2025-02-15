@@ -1,4 +1,4 @@
-[project]
+[project]//
 name = "token-voting-dapp"
 description = ""
 authors = []

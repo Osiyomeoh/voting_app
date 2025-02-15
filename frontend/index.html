@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Voting dApp on Stacks</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/micro-stacks/1.0.0/micro-stacks.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9fafb;
+        }
+        
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        
+        h1, h2 {
+            color: #3b82f6;
+        }
+        
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #2563eb;
+        }
+        
+        button:disabled {
+            background-color: #93c5fd;
+            cursor: not-allowed;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+        
+        .proposal {
+            background-color: #f3f4f6;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .proposal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .vote-yes {
+            background-color: #10b981;
+        }
+        
+        .vote-yes:hover {
+            background-color: #059669;
+        }
+        
+        .vote-no {
+            background-color: #ef4444;
+        }
+        
+        .vote-no:hover {
+            background-color: #dc2626;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-active {
+            background-color: #93c5fd;
+            color: #1e40af;
+        }
+        
+        .status-passed {
+            background-color: #a7f3d0;
+            color: #065f46;
+        }
+        
+        .status-failed {
+            background-color: #fecaca;
+            color: #b91c1c;
+        }
+        
+        .votes {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        #user-info {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Token Voting dApp on Stacks</h1>
+        <div id="user-info">
+            <p>Not connected. Please connect your wallet.</p>
+        </div>
+        <button id="connect-wallet">Connect Wallet</button>
+        <div id="token-actions" class="hidden">
+            <h3>Your Token Balance: <span id="token-balance">0</span></h3>
+            <div>
+                <label for="transfer-recipient">Transfer tokens to:</label>
+                <input type="text" id="transfer-recipient" placeholder="STx...">
+                <label for="transfer-amount">Amount:</label>
+                <input type="number" id="transfer-amount" min="1">
+                <button id="transfer-tokens">Transfer Tokens</button>
+            </div>
+            <div>
+                <button id="get-initial-tokens">Get Initial Tokens</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Create New Proposal</h2>
+        <div id="proposal-form">
+            <div>
+                <label for="proposal-title">Title:</label>
+                <input type="text" id="proposal-title" placeholder="Proposal Title">
+            </div>
+            <div>
+                <label for="proposal-description">Description:</label>
+                <textarea id="proposal-description" rows="4" placeholder="Describe your proposal..."></textarea>
+            </div>
+            <div>
+                <label for="proposal-duration">Duration (in blocks):</label>
+                <input type="number" id="proposal-duration" min="10" value="100">
+            </div>
+            <button id="create-proposal">Create Proposal</button>
+            <p>Note: Creating a proposal requires 100 tokens as deposit.</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Active Proposals</h2>
+        <div id="proposals-list">
+            <p>Connect your wallet to view proposals.</p>
+        </div>
+    </div>
+
+    <script>
+        // Contract info - update with your actual contract details
+        const contractAddress = 'ST000000000000000000000000000000'; // Replace with actual deployed address
+        const contractName = 'token-voting';
+        
+        // Global state
+        let userAddress = null;
+        let userSession = null;
+        let appDetails = {
+            name: 'Token Voting dApp',
+            icon: 'https://placeholder.com/icon.png'
+        };
+
+        // DOM Elements
+        const connectWalletBtn = document.getElementById('connect-wallet');
+        const userInfoDiv = document.getElementById('user-info');
+        const tokenActionsDiv = document.getElementById('token-actions');
+        const tokenBalanceSpan = document.getElementById('token-balance');
+        const transferRecipientInput = document.getElementById('transfer-recipient');
+        const transferAmountInput = document.getElementById('transfer-amount');
+        const transferTokensBtn = document.getElementById('transfer-tokens');
+        const getInitialTokensBtn = document.getElementById('get-initial-tokens');
+        const proposalTitleInput = document.getElementById('proposal-title');
+        const proposalDescriptionInput = document.getElementById('proposal-description');
+        const proposalDurationInput = document.getElementById('proposal-duration');
+        const createProposalBtn = document.getElementById('create-proposal');
+        const proposalsListDiv = document.getElementById('proposals-list');
+
+        // Event Listeners
+        connectWalletBtn.addEventListener('click', connectWallet);
+        transferTokensBtn.addEventListener('click', transferTokens);
+        getInitialTokensBtn.addEventListener('click', getInitialTokens);
+        createProposalBtn.addEventListener('click', createProposal);
+        
+        // Functions for interacting with the Stacks blockchain
+        async function connectWallet() {
+            try {
+                const userSession = new microStacks.UserSession();
+                const authOptions = {
+                    appDetails,
+                    redirectTo: '/',
+                    onFinish: (userData) => {
+                        userAddress = userData.profile.stxAddress.mainnet;
+                        updateUI();
+                        getProposals();
+                        getTokenBalance();
+                    }
+                };
+                
+                await userSession.authenticate(authOptions);
+            } catch (error) {
+                console.error('Error connecting wallet:', error);
+                alert('Failed to connect wallet. Please try again.');
+            }
+        }
+        
+        async function getTokenBalance() {
+            if (!userAddress) return;
+            
+            try {
+                const functionArgs = [microStacks.uintCV(userAddress)];
+                const result = await callReadOnlyFunction(
+                    'ft-get-balance',
+                    functionArgs,
+                    'governance-token'
+                );
+                
+                const balance = Number(result.value);
+                tokenBalanceSpan.textContent = balance;
+            } catch (error) {
+                console.error('Error getting token balance:', error);
+            }
+        }
+        
+        async function getInitialTokens() {
+            if (!userAddress) return;
+            
+            try {
+                const functionArgs = [];
+                await callContractFunction('initialize-tokens', functionArgs);
+                getTokenBalance();
+            } catch (error) {
+                console.error('Error getting initial tokens:', error);
+                alert('Failed to get initial tokens. Please try again.');
+            }
+        }
+        
+        async function transferTokens() {
+            if (!userAddress) return;
+            
+            const recipient = transferRecipientInput.value.trim();
+            const amount = parseInt(transferAmountInput.value);
+            
+            if (!recipient || isNaN(amount) || amount <= 0) {
+                alert('Please enter valid recipient and amount.');
+                return;
+            }
+            
+            try {
+                const functionArgs = [
+                    microStacks.principalCV(recipient),
+                    microStacks.uintCV(amount)
+                ];
+                await callContractFunction('transfer-tokens', functionArgs);
+                getTokenBalance();
+                alert('Tokens transferred successfully!');
+            } catch (error) {
+                console.error('Error transferring tokens:', error);
+                alert('Failed to transfer tokens. Please try again.');
+            }
+        }
+        
+        async function createProposal() {
+            if (!userAddress) return;
+            
+            const title = proposalTitleInput.value.trim();
+            const description = proposalDescriptionInput.value.trim();
+            const duration = parseInt(proposalDurationInput.value);
+            
+            if (!title || !description || isNaN(duration) || duration < 10) {
+                alert('Please fill all fields with valid values. Duration must be at least 10 blocks.');
+                return;
+            }
+            
+            try {
+                const functionArgs = [
+                    microStacks.stringUtf8CV(title),
+                    microStacks.stringUtf8CV(description),
+                    microStacks.uintCV(duration)
+                ];
+                await callContractFunction('create-proposal', functionArgs);
+                
+                // Clear form
+                proposalTitleInput.value = '';
+                proposalDescriptionInput.value = '';
+                getProposals();
+                getTokenBalance();
+                alert('Proposal created successfully!');
+            } catch (error) {
+                console.error('Error creating proposal:', error);
+                alert('Failed to create proposal. Make sure you have at least 100 tokens.');
+            }
+        }
+        
+        async function voteOnProposal(proposalId, voteType) {
+            if (!userAddress) return;
+            
+            try {
+                const functionArgs = [
+                    microStacks.uintCV(proposalId),
+                    microStacks.stringAsciiCV(voteType)
+                ];
+                await callContractFunction('vote', functionArgs);
+                getProposals();
+                alert(`Vote '${voteType}' recorded successfully!`);
+            } catch (error) {
+                console.error('Error voting on proposal:', error);
+                alert('Failed to vote. You may have already voted or the proposal might be closed.');
+            }
+        }
+        
+        async function finalizeProposal(proposalId) {
+            if (!userAddress) return;
+            
+            try {
+                const functionArgs = [microStacks.uintCV(proposalId)];
+                await callContractFunction('finalize-proposal', functionArgs);
+                getProposals();
+                alert('Proposal finalized successfully!');
+            } catch (error) {
+                console.error('Error finalizing proposal:', error);
+                alert('Failed to finalize proposal. It might not be ready to finalize yet.');
+            }
+        }
+        
+        async function getProposals() {
+            if (!userAddress) return;
+            
+            try {
+                proposalsListDiv.innerHTML = '<p>Loading proposals...</p>';
+                
+                // This is a simplified implementation - in a real app,
+                // you would need to track proposal IDs or query for them
+                // For demo purposes, let's assume we query proposals 1-5
+                const proposalIds = [1, 2, 3, 4, 5];
+                const proposals = [];
+                
+                for (const id of proposalIds) {
+                    try {
+                        const functionArgs = [microStacks.uintCV(id)];
+                        const result = await callReadOnlyFunction('get-proposal', functionArgs);
+                        
+                        if (result && result.value) {
+                            const proposal = {
+                                id,
+                                title: result.value.title.value,
+                                description: result.value.description.value,
+                                proposer: result.value.proposer.value,
+                                yesVotes: Number(result.value.yesVotes.value),
+                                noVotes: Number(result.value.noVotes.value),
+                                status: result.value.status.value,
+                                endBlock: Number(result.value.endBlock.value)
+                            };
+                            proposals.push(proposal);
+                        }
+                    } catch (error) {
+                        // Skip if proposal doesn't exist
+                        console.log(`Proposal ${id} doesn't exist or error retrieving it`);
+                    }
+                }
+                
+                renderProposals(proposals);
+            } catch (error) {
+                console.error('Error getting proposals:', error);
+                proposalsListDiv.innerHTML = '<p>Error loading proposals. Please try again.</p>';
+            }
+        }
+        
+        function renderProposals(proposals) {
+            if (proposals.length === 0) {
+                proposalsListDiv.innerHTML = '<p>No proposals found. Create one!</p>';
+                return;
+            }
+            
+            let html = '';
+            for (const proposal of proposals) {
+                const statusClass = `status-${proposal.status}`;
+                
+                html += `
+                    <div class="proposal">
+                        <h3>${proposal.title}</h3>
+                        <p><span class="status ${statusClass}">${proposal.status}</span></p>
+                        <p>${proposal.description}</p>
+                        <div class="votes">
+                            <span>Yes: ${proposal.yesVotes}</span>
+                            <span>No: ${proposal.noVotes}</span>
+                        </div>
+                        <p>Ends at block: ${proposal.endBlock}</p>
+                        <div class="proposal-actions">
+                            ${proposal.status === 'active' ? `
+                                <button class="vote-yes" onclick="voteOnProposal(${proposal.id}, 'yes')">Vote Yes</button>
+                                <button class="vote-no" onclick="voteOnProposal(${proposal.id}, 'no')">Vote No</button>
+                            ` : ''}
+                            ${proposal.status === 'active' ? `
+                                <button onclick="finalizeProposal(${proposal.id})">Finalize</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            proposalsListDiv.innerHTML = html;
+        }
+        
+        async function callReadOnlyFunction(functionName, functionArgs, tokenName = null) {
+            const options = {
+                contractAddress,
+                contractName,
+                functionName,
+                functionArgs
+            };
+            
+            if (tokenName) {
+                options.contractName = 'ft-trait';
+                options.functionName = tokenName;
+            }
+            
+            const result = await microStacks.callReadOnlyFunction(options);
+            return result;
+        }
+        
+        async function callContractFunction(functionName, functionArgs) {
+            const options = {
+                contractAddress,
+                contractName,
+                functionName,
+                functionArgs,
+                appDetails,
+                onFinish: (data) => {
+                    console.log('Transaction submitted:', data);
+                }
+            };
+            
+            await microStacks.openContractCall(options);
+        }
+        
+        function updateUI() {
+            if (userAddress) {
+                userInfoDiv.innerHTML = `<p>Connected: ${userAddress}</p>`;
+                connectWalletBtn.classList.add('hidden');
+                tokenActionsDiv.classList.remove('hidden');
+            } else {
+                userInfoDiv.innerHTML = '<p>Not connected. Please connect your wallet.</p>';
+                connectWalletBtn.classList.remove('hidden');
+                tokenActionsDiv.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
